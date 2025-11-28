@@ -1,11 +1,36 @@
 // controllers/predictController.js
 const { getModelInfo, predict } = require("../services/tfModelService");
+const tfModelService = require('../services/tfModelService');
+const dbService = require('../services/dbService'); // Importamos el nuevo servicio
+
 
 function health(req, res) {
   res.json({
     status: "ok",
     service: "predict"
   });
+}
+async function getPrediction(req, res) {
+    const inputs = req.body; // Asumiendo que los datos llegan por POST
+    
+    try {
+        // 1. Obtener predicción de la IA (Tu lógica actual)
+        const prediction = await tfModelService.predict(inputs); 
+
+        // 2. Guardar en Base de Datos (Nueva lógica de persistencia)
+        // Guardamos tanto lo que entró (inputs) como lo que salió (prediction)
+        const logGuardado = await dbService.guardarPrediccion(inputs, prediction);
+
+        // 3. Responder al cliente
+        res.status(200).send({ 
+            mensaje: 'Predicción realizada y guardada',
+            prediccion: prediction,
+            id_registro: logGuardado._id 
+        });
+
+    } catch (err) {
+        res.status(500).send({ mensaje: `Error en el proceso: ${err.message}` });
+    }
 }
 
 function ready(req, res) {
@@ -80,5 +105,6 @@ async function doPredict(req, res) {
 module.exports = {
   health,
   ready,
-  doPredict
+  doPredict,
+  getPrediction
 };

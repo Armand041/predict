@@ -5,6 +5,8 @@ const express = require("express");
 const path = require("path");
 const predictRoutes = require("./routes/predictRoutes");
 const { initModel } = require("./services/tfModelService");
+const mongoose = require('mongoose');
+
 
 const PORT = process.env.PORT || 3002;
 
@@ -15,6 +17,14 @@ app.use(express.json());
 const modelDir = path.resolve(__dirname, "model");
 app.use("/model", express.static(modelDir));
 
+mongoose.connect('mongodb://localhost:27017/prediccion_consumo')
+    .then(() => {
+        console.log('Conexión a la base de datos establecida');
+    })
+    .catch(err => {
+        console.error('Error de conexión a la base de datos:', err);
+    });
+    
 // Rutas del servicio PREDICT
 app.use("/", predictRoutes);
 
