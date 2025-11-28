@@ -1,110 +1,108 @@
 // controllers/predictController.js
-const { getModelInfo, predict } = require("../services/tfModelService");
+'use strict';
+
 const tfModelService = require('../services/tfModelService');
-const dbService = require('../services/dbService'); // Importamos el nuevo servicio
+const dbService = require('../services/dbService');
 
-
+/**
+ * Endpoint de salud para verificar que el servicio responde.
+ */
 function health(req, res) {
-  res.json({
-    status: "ok",
-    service: "predict"
-  });
+    res.json({
+        status: "ok",
+        service: "predict"
+    });
 }
+
+/**
+ * Endpoint para verificar si el modelo de IA ya está cargado en memoria.
+ */
+function ready(req, res) {
+    const info = tfModelService.getModelInfo();
+
+    if (!info.ready) {
+        return res.status(503).json({
+            ready: false,
+            modelVersion: info.modelVersion,
+            message: "Model is still loading"
+        });
+    }
+
+    res.json({
+        ready: true,
+        modelVersion: info.modelVersion
+    });
+}
+
+/**
+ * Función principal: Valida, Predice y Guarda en BD.
+ */
 async function getPrediction(req, res) {
-    const inputs = req.body; // Asumiendo que los datos llegan por POST
-    
+    const start = Date.now();
+
     try {
-        // 1. Obtener predicción de la IA (Tu lógica actual)
-        const prediction = await tfModelService.predict(inputs); 
+        // 1. Verificamos que el modelo esté listo
+        const info = tfModelService.getModelInfo();
+        if (!info.ready) {
+            return res.status(503).json({
+                error: "Model not ready",
+                ready: false
+            });
+        }
 
-        // 2. Guardar en Base de Datos (Nueva lógica de persistencia)
-        // Guardamos tanto lo que entró (inputs) como lo que salió (prediction)
-        const logGuardado = await dbService.guardarPrediccion(inputs, prediction);
+        // 2. Extraemos y validamos los datos de entrada
+        const { features, meta } = req.body;
 
-        // 3. Responder al cliente
-        res.status(200).send({ 
-            mensaje: 'Predicción realizada y guardada',
-            prediccion: prediction,
-            id_registro: logGuardado._id 
+        if (!features) {
+            return res.status(400).json({ error: "Missing features" });
+        }
+        
+        // Validación opcional de meta (según tu código anterior)
+        if (!meta || typeof meta !== "object") {
+             // Si meta es obligatorio, descomenta la siguiente línea:
+             // return res.status(400).json({ error: "Missing meta object" });
+             console.log("Advertencia: No se recibió objeto meta");
+        }
+
+        // Validación de dimensiones (según tu código anterior)
+        if (info.inputDim && features.length !== info.inputDim) {
+             return res.status(400).json({
+                error: `features must be an array of ${info.inputDim} numbers`
+             });
+        }
+
+        // 3. Realizamos la predicción con la IA
+        const prediction = await tfModelService.predict(features);
+        
+        // Calculamos métricas de tiempo
+        const latencyMs = Date.now() - start;
+        const timestamp = new Date().toISOString();
+
+        // 4. PERSISTENCIA: Guardamos en MongoDB
+        // Pasamos el cuerpo completo (req.body) para guardar features y meta
+        const logGuardado = await dbService.guardarPrediccion(req.body, prediction);
+
+        // 5. Respondemos al cliente con el ID REAL de la base de datos
+        res.status(201).json({
+            predictionId: logGuardado._id, // ¡Aquí ya no será null!
+            prediction: prediction,
+            timestamp: timestamp,
+            latencyMs: latencyMs
         });
 
     } catch (err) {
-        res.status(500).send({ mensaje: `Error en el proceso: ${err.message}` });
+        console.error("Error en getPrediction:", err);
+        res.status(500).json({ 
+            error: "Internal error",
+            details: err.message 
+        });
     }
 }
 
-function ready(req, res) {
-  const info = getModelInfo();
-
-  if (!info.ready) {
-    return res.status(503).json({
-      ready: false,
-      modelVersion: info.modelVersion,
-      message: "Model is still loading"
-    });
-  }
-
-  res.json({
-    ready: true,
-    modelVersion: info.modelVersion
-  });
-}
-
-async function doPredict(req, res) {
-  const start = Date.now();
-
-  try {
-    const info = getModelInfo();
-    if (!info.ready) {
-      return res.status(503).json({
-        error: "Model not ready",
-        ready: false
-      });
-    }
-
-    const { features, meta } = req.body;
-
-    if (!features) {
-      return res.status(400).json({ error: "Missing features" });
-    }
-    if (!meta || typeof meta !== "object") {
-      return res.status(400).json({ error: "Missing meta object" });
-    }
-
-    const { featureCount } = meta;
-
-    if (featureCount !== info.inputDim) {
-      return res.status(400).json({
-        error: `featureCount must be ${info.inputDim}, received ${featureCount}`
-      });
-    }
-
-    if (!Array.isArray(features) || features.length !== info.inputDim) {
-      return res.status(400).json({
-        error: `features must be an array of ${info.inputDim} numbers`
-      });
-    }
-
-    const prediction = await predict(features);
-    const latencyMs = Date.now() - start;
-    const timestamp = new Date().toISOString();
-
-    // De momento sin MongoDB → predictionId null
-    res.status(201).json({
-      predictionId: null,
-      prediction,
-      timestamp,
-      latencyMs
-    });
-  } catch (err) {
-    console.error("Error en /predict:", err);
-    res.status(500).json({ error: "Internal error" });
-  }
-}
-
+// Exportamos las funciones
+// IMPORTANTE: Asegúrate de que tu archivo de rutas use 'getPrediction'
 module.exports = {
-  health,
-  ready,
-  doPredict,
-  getPrediction
+    health,
+    ready,
+    getPrediction 
 };
