@@ -11,6 +11,7 @@ const mongoose = require('mongoose');
 
 const PORT = process.env.PORT || 3002;
 const MONGO_URI = process.env.MONGO_URI;
+mongoose.connect(MONGO_URI);
 
 const app = express();
 app.use(express.json());
